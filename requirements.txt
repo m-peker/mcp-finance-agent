@@ -1,0 +1,13 @@
+# Temel çerçeveler
+langgraph==1.0.3
+chainlit==2.9.0
+openai==2.8.0
+
+# Veri işleme
+pandas==2.3.3
+
+# Görselleştirme
+plotly==6.4.0
+
+# Ortam değişkenleri (.env dosyası için)
+python-dotenv==1.2.1

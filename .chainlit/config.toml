@@ -1,0 +1,16 @@
+[project]
+# Oturum geçmişi ve kullanıcı geri bildirimi kapalı (yerel kullanım)
+enable_telemetry = false
+
+[features]
+# Kullanıcı mesaj düzenleme kapalı
+edit_message = false
+
+[UI]
+# Uygulama adı ve dil ayarı
+name = "Finans Asistanı"
+# Chainlit'in varsayılan İngilizce çevirisini kullan (tr-TR dosyası gerekmez)
+default_language = "en-US"
+
+[meta]
+generated_by = "1.0.0"
