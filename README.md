@@ -17,7 +17,7 @@ through a **Model Context Protocol (MCP) layer**.
 
 ![Architecture Diagram](images/architecture_diagram.png)
 
-*Chainlit UI → LangGraph Agent Engine (9 agents) → MCP Layer (DB + Agent Servers) → SQLite & OpenAI GPT-4o-mini → Interactive Plotly Charts*
+*User → Chainlit UI → LangGraph Multi-Agent Workflow → MCP Client → MCP Layer → SQLite / OpenAI GPT-4o-mini → Final Response*
 
 ### Agent Workflow
 
@@ -31,10 +31,12 @@ User Question
 🔍 SQL Validator Agent   → Fan-out detection & CTE rewrite
     ↓
 ⚙️  Execute SQL          → Run query against finance.db
-    ↓ (if error)
-🔧 Error Agent           → Fix query (max 3 retries)
-    ↓ (success)
-🧠 Sanity Check Agent    → Verify results make sense
+    ├── success → 🧠 Sanity Check Agent → Verify results make sense
+    │       ├── passed → 💬 Analysis Agent
+    │       └── failed → back to 📝 SQL Agent (max 1 retry)
+    │
+    └── error → 🔧 Error Recovery Agent → corrected SQL → back to ⚙️ Execute SQL
+                 max 3 retries, then graceful fallback
     ↓
 💬 Analysis Agent        → Raw data → natural language
     ↓
@@ -52,12 +54,33 @@ User Question
 | `guardrails_agent` | Scope & greeting filter | `check_scope` |
 | `sql_agent` | NL → SQLite query generation | `generate_sql` |
 | `sql_validator_agent` | Fan-out detection & CTE rewrite | `validate_sql` |
-| `execute_sql` | Query execution (multi-statement) | `execute_query` |
+| `execute_sql` | SQL execution node (multi-statement) | `execute_query` |
 | `error_agent` | Failed SQL analysis & correction (max 3×) | `fix_sql_error` |
 | `sanity_check_agent` | Result reasonability verification | `check_sanity` |
 | `analysis_agent` | Raw results → natural language | `analyze_results` |
 | `decide_graph_need` | Chart type decision (bar/line/pie/scatter) | `decide_graph_need` |
 | `viz_agent` | LLM-powered Plotly code generation | `generate_plotly` |
+
+### Final Output
+
+Each response may include:
+
+- **Natural language answer** — human-readable interpretation of results
+- **Generated SQL query** — the exact SQLite query that was executed
+- **Query results summary** — formatted data from the database
+- **Interactive Plotly chart** — bar, line, pie, or scatter chart (when data warrants visualization)
+
+---
+
+## Runtime Flow
+
+1. User sends a financial question through Chainlit.
+2. Chainlit forwards the message to the LangGraph workflow.
+3. LangGraph routes the question through 9 specialized agents.
+4. Agents access tools only through the MCP client.
+5. MCP servers expose database and LLM-powered tools.
+6. SQL is generated, validated, executed, checked, analyzed, and optionally visualized.
+7. Final response is streamed back to Chainlit.
 
 ---
 
