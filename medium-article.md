@@ -46,8 +46,6 @@ You type a question like *"What are my top 5 spending categories this year?"* an
 
 All of this happens through **9 specialized agents** communicating exclusively via an MCP tool layer.
 
-![Scenario 1](images/Scenario-1.gif)
-
 The project uses **synthetic financial data** covering 2024–2025:
 
 - 💳 5 bank accounts with current balances
@@ -162,10 +160,6 @@ User Question
     ↓
 ✅ Response to User      → Text + SQL + Interactive Chart
 ```
-
-The LangGraph workflow graph, auto-generated from the code:
-
-![LangGraph Workflow](images/finance_workflow.png)
 
 ---
 

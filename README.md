@@ -13,71 +13,36 @@ through a **Model Context Protocol (MCP) layer**.
 
 ---
 
-## Preview
-
-### Scenario 1 — Simple Query & Chart
-
-![Scenario 1](images/Scenario-1.gif)
-
-### Scenario 2 — Complex Multi-Table Analysis
-
-![Scenario 2](images/Scenario-2.gif)
-
----
-
 ## Architecture
 
 ![Architecture Diagram](images/architecture_diagram.png)
 
 *Chainlit UI → LangGraph Agent Engine (9 agents) → MCP Layer (DB + Agent Servers) → SQLite & OpenAI GPT-4o-mini → Interactive Plotly Charts*
 
-### MCP Layer (Model Context Protocol)
-
-All agent operations flow through the MCP layer — **agents never make
-direct function calls**. This clean separation makes the system modular,
-testable, and production-ready.
+### Agent Workflow
 
 ```
-┌─────────────────────────────────────────────┐
-│               Chainlit UI                    │
-└──────────────────┬──────────────────────────┘
-                   │
-┌──────────────────▼──────────────────────────┐
-│          LangGraph Agent Workflow            │
-│                                              │
-│  guardrails → sql_gen → validator → execute  │
-│       ↑          ↑                    │      │
-│       └──────────┼──────┐      ┌──────┘      │
-│                  │      │      │              │
-│           sanity_check  │  error_handler      │
-│                  │      │                     │
-│              analysis   │                     │
-│                  │      │                     │
-│           graph_decider │                     │
-│                  │      │                     │
-│              viz_agent  │                     │
-└──────────────────┼──────┼─────────────────────┘
-                   │      │
-         ┌─────────▼──────▼─────────┐
-         │       MCP CLIENTS        │
-         └──────┬──────────┬────────┘
-                │          │
-    ┌───────────▼──┐  ┌───▼──────────────┐
-    │  DB Server   │  │ Agent Tools Server│
-    │  ─────────   │  │ ───────────────  │
-    │ • get_schema │  │ • check_scope    │
-    │ • exec_query │  │ • generate_sql   │
-    │ • table_info │  │ • validate_sql   │
-    │              │  │ • fix_sql_error  │
-    │              │  │ • check_sanity   │
-    │              │  │ • analyze_results│
-    │              │  │ • decide_graph   │
-    │              │  │ • generate_plotly│
-    └──────┬───────┘  └──────┬───────────┘
-           │                 │
-    ┌──────▼──────┐  ┌──────▼───────────┐
-    │  SQLite DB  │  │  OpenAI GPT-4o   │
-    └─────────────┘  └──────────────────┘
+User Question
+    ↓
+🛡️  Guardrails Agent     → Scope & greeting filter
+    ↓
+📝 SQL Agent             → Natural language → SQLite query
+    ↓
+🔍 SQL Validator Agent   → Fan-out detection & CTE rewrite
+    ↓
+⚙️  Execute SQL          → Run query against finance.db
+    ↓ (if error)
+🔧 Error Agent           → Fix query (max 3 retries)
+    ↓ (success)
+🧠 Sanity Check Agent    → Verify results make sense
+    ↓
+💬 Analysis Agent        → Raw data → natural language
+    ↓
+📊 Decide Graph Need     → Chart needed? Which type?
+    ↓ (if chart)
+📈 Viz Agent             → Generate interactive Plotly chart
+    ↓
+✅ Response to User      → Text + SQL + Interactive Chart
 ```
 
 ### Agent Roles
@@ -93,10 +58,6 @@ testable, and production-ready.
 | `analysis_agent` | Raw results → natural language | `analyze_results` |
 | `decide_graph_need` | Chart type decision (bar/line/pie/scatter) | `decide_graph_need` |
 | `viz_agent` | LLM-powered Plotly code generation | `generate_plotly` |
-
-### LangGraph Workflow
-
-![LangGraph Workflow](images/finance_workflow.png)
 
 ---
 
@@ -134,8 +95,8 @@ Synthetic financial data (2024–2025, English):
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/username/finance-assistant.git
-cd finance-assistant
+git clone https://github.com/m-peker/mcp-finance-agent.git
+cd mcp-finance-agent
 ```
 
 ### 2. Create a virtual environment
@@ -224,14 +185,11 @@ finance-assistant/
 │   └── nodes.py                # All 9 agent node implementations
 │
 ├── images/
-│   ├── Scenario-1.gif              # Simple query & chart demo
-│   ├── Scenario-2.gif              # Complex multi-table analysis demo
-│   ├── architecture_diagram.png    # High-level system architecture diagram
-│   └── finance_workflow.png        # Auto-generated LangGraph graph (gitignored)
+│   └── architecture_diagram.png    # High-level system architecture diagram
 │
 ├── .chainlit/
 │   ├── config.toml                 # Chainlit application settings
-│   └── translations/               # UI translations
+│   └── translations/               # UI translations (gitignored)
 ```
 
 ---
