@@ -1,15 +1,15 @@
 [project]
-# Oturum geçmişi ve kullanıcı geri bildirimi kapalı (yerel kullanım)
+# Session history and user feedback disabled (local use)
 enable_telemetry = false
 
 [features]
-# Kullanıcı mesaj düzenleme kapalı
+# User message editing disabled
 edit_message = false
 
 [UI]
-# Uygulama adı ve dil ayarı
-name = "Finans Asistanı"
-# Chainlit'in varsayılan İngilizce çevirisini kullan (tr-TR dosyası gerekmez)
+# Application name
+name = "Finance Assistant"
+# Use Chainlit's default English translations
 default_language = "en-US"
 
 [meta]

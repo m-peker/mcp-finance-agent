@@ -1,114 +1,144 @@
-# Finans Asistanı — Çok Ajanlı Text-to-SQL Chatbot
+# Finance Assistant — Multi-Agent Text-to-SQL Chatbot with MCP
 
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.0.3-green.svg)
 ![Chainlit](https://img.shields.io/badge/Chainlit-2.9.0-orange.svg)
+![MCP](https://img.shields.io/badge/MCP-1.0+-purple.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-Doğal dildeki finansal soruları SQL sorgularına çeviren, veritabanında çalıştıran,
-sonuçları yorumlayan ve interaktif grafikler üreten çok ajanlı bir chatbot.
+A production-ready multi-agent chatbot that converts natural language
+financial questions into SQL queries, executes them against a database,
+interprets the results, and generates interactive charts — all orchestrated
+through a **Model Context Protocol (MCP) layer**.
 
 ---
 
-## Önizleme
+## Preview
 
-### Senaryo 1 — Basit Sorgu & Grafik
+### Scenario 1 — Simple Query & Chart
 
-![Senaryo 1](images/Scenario-1.gif)
+![Scenario 1](images/Scenario-1.gif)
 
-### Senaryo 2 — Karmaşık Çok Tablolu Analiz
+### Scenario 2 — Complex Multi-Table Analysis
 
-![Senaryo 2](images/Scenario-2.gif)
+![Scenario 2](images/Scenario-2.gif)
 
 ---
 
-## Mimari
+## Architecture
 
-![Mimari Diyagramı](images/architecture_diagram.png)
+![Architecture Diagram](images/architecture_diagram.png)
 
-### LangGraph State Machine
+*Chainlit UI → LangGraph Agent Engine (9 agents) → MCP Layer (DB + Agent Servers) → SQLite & OpenAI GPT-4o-mini → Interactive Plotly Charts*
 
-Aşağıdaki diyagram, LangGraph tarafından otomatik üretilen gerçek iş akışını göstermektedir.
+### MCP Layer (Model Context Protocol)
+
+All agent operations flow through the MCP layer — **agents never make
+direct function calls**. This clean separation makes the system modular,
+testable, and production-ready.
+
+```
+┌─────────────────────────────────────────────┐
+│               Chainlit UI                    │
+└──────────────────┬──────────────────────────┘
+                   │
+┌──────────────────▼──────────────────────────┐
+│          LangGraph Agent Workflow            │
+│                                              │
+│  guardrails → sql_gen → validator → execute  │
+│       ↑          ↑                    │      │
+│       └──────────┼──────┐      ┌──────┘      │
+│                  │      │      │              │
+│           sanity_check  │  error_handler      │
+│                  │      │                     │
+│              analysis   │                     │
+│                  │      │                     │
+│           graph_decider │                     │
+│                  │      │                     │
+│              viz_agent  │                     │
+└──────────────────┼──────┼─────────────────────┘
+                   │      │
+         ┌─────────▼──────▼─────────┐
+         │       MCP CLIENTS        │
+         └──────┬──────────┬────────┘
+                │          │
+    ┌───────────▼──┐  ┌───▼──────────────┐
+    │  DB Server   │  │ Agent Tools Server│
+    │  ─────────   │  │ ───────────────  │
+    │ • get_schema │  │ • check_scope    │
+    │ • exec_query │  │ • generate_sql   │
+    │ • table_info │  │ • validate_sql   │
+    │              │  │ • fix_sql_error  │
+    │              │  │ • check_sanity   │
+    │              │  │ • analyze_results│
+    │              │  │ • decide_graph   │
+    │              │  │ • generate_plotly│
+    └──────┬───────┘  └──────┬───────────┘
+           │                 │
+    ┌──────▼──────┐  ┌──────▼───────────┐
+    │  SQLite DB  │  │  OpenAI GPT-4o   │
+    └─────────────┘  └──────────────────┘
+```
+
+### Agent Roles
+
+| Agent | Role | MCP Tool |
+|---|---|---|
+| `guardrails_agent` | Scope & greeting filter | `check_scope` |
+| `sql_agent` | NL → SQLite query generation | `generate_sql` |
+| `sql_validator_agent` | Fan-out detection & CTE rewrite | `validate_sql` |
+| `execute_sql` | Query execution (multi-statement) | `execute_query` |
+| `error_agent` | Failed SQL analysis & correction (max 3×) | `fix_sql_error` |
+| `sanity_check_agent` | Result reasonability verification | `check_sanity` |
+| `analysis_agent` | Raw results → natural language | `analyze_results` |
+| `decide_graph_need` | Chart type decision (bar/line/pie/scatter) | `decide_graph_need` |
+| `viz_agent` | LLM-powered Plotly code generation | `generate_plotly` |
+
+### LangGraph Workflow
 
 ![LangGraph Workflow](images/finance_workflow.png)
 
-```
-Kullanıcı (Chainlit UI)
-        ↓
-guardrails_agent      → Kapsam & selamlama filtresi
-        ↓
-sql_agent             → Doğal dil → SQLite sorgusu
-        ↓
-sql_validator_agent   → Fan-out (kartezyen çarpım) tespiti ve CTE düzeltmesi
-        ↓
-execute_sql           → finance.db üzerinde sorgu çalıştırma
-        ↓ (hata)
-error_agent ──────────→ execute_sql   (max 3 deneme)
-        ↓ (başarı)
-sanity_check_agent    → Sonuçlar mantıklı mı? Değilse sql_agent'e geri dön
-        ↓
-analysis_agent        → Ham sonuç → okunabilir metin yanıt
-        ↓
-decide_graph_need     → Grafik gerekli mi, hangi tür?
-        ↓ (gerekiyorsa)
-viz_agent             → Plotly kodu üret ve çalıştır
-        ↓
-Chainlit UI           → SQL + metin yanıt + interaktif grafik
-```
-
-### Ajan Rolleri
-
-| Ajan | Görev |
-|---|---|
-| `guardrails_agent` | Finans kapsamı dışı ve selamlama tespiti |
-| `sql_agent` | Doğal dil → SQLite (şema + kural farkındalıklı) |
-| `sql_validator_agent` | Fan-out pattern tespiti; riskli sorgularda CTE yeniden yazımı |
-| `execute_sql` | Sorgu çalıştırma; çoklu ifade desteği |
-| `error_agent` | Başarısız SQL analizi ve düzeltme (max 3×) |
-| `sanity_check_agent` | Sonuç akıl yürütme; şişmiş/imkânsız değerleri tespit |
-| `analysis_agent` | Sorgu sonuçlarını kullanıcı diline çevirme |
-| `decide_graph_need` | Grafik türü kararı (bar/line/pie/scatter) |
-| `viz_agent` | LLM ile Plotly kodu üretme ve çalıştırma |
-
 ---
 
-## Teknoloji Yığını
+## Tech Stack
 
-| Katman | Araç |
-|---|---|
-| Ajan orkestrasyonu | LangGraph 1.0.3 |
-| Web arayüzü | Chainlit 2.9.0 |
-| LLM | OpenAI GPT-4o-mini |
-| Veritabanı | SQLite3 (yerel) |
-| Veri işleme | Pandas 2.3.3 |
-| Görselleştirme | Plotly 6.4.0 |
-
----
-
-## Veritabanı Şeması
-
-Sentetik finans verisi (2024–2025):
-
-| Tablo | Açıklama | Satır |
+| Layer | Technology | Version |
 |---|---|---|
-| `accounts` | Banka hesapları ve bakiyeler | 5 |
-| `categories` | Gelir/gider kategorileri | 15 |
-| `transactions` | Tüm finansal işlemler | ~510 |
-| `budgets` | Aylık kategori bütçeleri | 240 |
-| `invoices` | Faturalar ve ödeme durumları | 200 |
+| Agent Orchestration | LangGraph | 1.0.3 |
+| Web Interface | Chainlit | 2.9.0 |
+| MCP Protocol | MCP Python SDK | 1.0+ |
+| LLM | OpenAI GPT-4o-mini | — |
+| Database | SQLite3 | Built-in |
+| Data Processing | Pandas | 2.3.3 |
+| Visualization | Plotly | 6.4.0 |
+| Config | Pydantic Settings | 2.0+ |
 
 ---
 
-## Kurulum
+## Database Schema
 
-### 1. Depoyu klonla
+Synthetic financial data (2024–2025, English):
+
+| Table | Description | Rows |
+|---|---|---|
+| `accounts` | Bank accounts and balances | 5 |
+| `categories` | Income/expense categories | 15 |
+| `transactions` | All financial transactions | ~510 |
+| `budgets` | Monthly category budgets | 240 |
+| `invoices` | Invoices and payment statuses | 200 |
+
+---
+
+## Setup
+
+### 1. Clone the repository
 
 ```bash
-git clone https://github.com/kullanici-adi/finans-asistani.git
-cd finans-asistani
+git clone https://github.com/username/finance-assistant.git
+cd finance-assistant
 ```
 
-### 2. Sanal ortam oluştur
+### 2. Create a virtual environment
 
 ```bash
 python -m venv venv
@@ -120,79 +150,117 @@ venv\Scripts\activate
 source venv/bin/activate
 ```
 
-### 3. Bağımlılıkları yükle
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Ortam değişkenini ayarla
+### 4. Set environment variables
 
 ```bash
 cp .env.example .env
-# .env dosyasını aç ve OPENAI_API_KEY değerini gir
+# Open .env and enter your OPENAI_API_KEY
 ```
 
-API anahtarı için: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+API key: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
 
-### 5. Veritabanını oluştur
+### 5. Initialize the database
 
 ```bash
 python db_init.py
 ```
 
-Sentetik finans verisi üretilir ve `finance.db` dosyası oluşturulur.
+Generates synthetic financial data and creates `finance.db`.
 
-### 6. Uygulamayı başlat
+### 6. Start the application
 
 ```bash
 chainlit run app.py
 ```
 
-Tarayıcıda aç: **http://localhost:8000**
+Open: **http://localhost:8000**
 
 ---
 
-## Örnek Sorular
+## Sample Questions
 
 ```
-Bu yılki toplam gelir ve giderim ne kadar?
-En çok harcama yaptığım 5 kategori neler?
-Hangi aylarda bütçemi aştım?
-Ödenmemiş veya gecikmiş faturalarım var mı?
-Kredi kartı ile yapılan harcamaların toplamı nedir?
-2024 yılında bütçe limitini en az 3 farklı ayda aşmış kategorilerin
-toplam harcama tutarını ve gecikmiş fatura sayısını listele.
+What is my total income and expenses this year?
+What are my top 5 spending categories?
+Which months did I exceed my budget?
+Do I have any unpaid or overdue invoices?
+What is the total spent via credit card?
+List categories that exceeded their budget in at least 3 different months
+in 2024, along with their total spending and overdue invoice counts.
 ```
 
 ---
 
-## Proje Yapısı
+## Project Structure
 
 ```
-finans-asistani/
+finance-assistant/
 │
-├── app.py                   # Chainlit arayüzü ve olay yöneticileri
-├── text2sql_agent.py        # LangGraph ajan motoru (tüm iş akışı)
-├── db_init.py               # Sentetik veri üretimi ve veritabanı kurulumu
-├── finance.db               # SQLite veritabanı (db_init.py ile üretilir)
-├── requirements.txt         # Python bağımlılıkları
-├── chainlit.md              # Karşılama ekranı metni
-├── .env.example             # API anahtarı şablonu
+├── app.py                      # Chainlit UI & event handlers
+├── graph.py                    # LangGraph state machine definition
+├── stream.py                   # Async streaming interface
+├── config.py                   # Configuration & schema definitions
+├── db_init.py                  # Synthetic data generation
+├── finance.db                  # SQLite database (auto-generated)
+├── requirements.txt            # Python dependencies
+├── chainlit.md                     # Welcome screen
+├── medium-article.md               # Full Medium article about this project
+├── .env.example                    # API key template
+│
+├── mcp_servers/                # Model Context Protocol servers
+│   ├── __init__.py
+│   ├── db_server.py            # Database tools (schema, query, info)
+│   └── agent_server.py         # LLM-powered agent tools
+│
+├── agents/                     # LangGraph agent nodes
+│   ├── __init__.py
+│   ├── mcp_client.py           # MCP client wrapper
+│   └── nodes.py                # All 9 agent node implementations
 │
 ├── images/
-│   ├── Scenario-1.gif       # Basit sorgu & grafik demosu
-│   ├── Scenario-2.gif       # Karmaşık analiz demosu
-│   ├── architecture_diagram.png   # Sistem mimarisi diyagramı
-│   ├── finance_workflow.png       # LangGraph iş akışı (otomatik üretilen)
-│   └── text2sql_workflow.png      # Ek akış diyagramı
+│   ├── Scenario-1.gif              # Simple query & chart demo
+│   ├── Scenario-2.gif              # Complex multi-table analysis demo
+│   ├── architecture_diagram.png    # High-level system architecture diagram
+│   └── finance_workflow.png        # Auto-generated LangGraph graph (gitignored)
 │
-└── .chainlit/
-    └── config.toml          # Chainlit uygulama ayarları
+├── .chainlit/
+│   ├── config.toml                 # Chainlit application settings
+│   └── translations/               # UI translations
 ```
 
 ---
 
-## Lisans
+## Key Design Decisions
+
+### MCP Layer
+Every agent operation goes through the Model Context Protocol layer.
+Agents call `MCPClient.call_tool("db"|"agent", tool_name, args)` —
+never direct functions. This means:
+- **Modularity**: Swap implementations without touching agents
+- **Testability**: Mock MCP servers for unit testing
+- **Production readiness**: MCP servers can run as separate processes over stdio
+
+### Deterministic Fan-Out Detection
+Before calling the LLM for SQL validation, a pure Python check runs:
+```python
+has_join = " JOIN " in sql.upper()
+has_agg  = any(f in sql.upper() for f in ["SUM(", "COUNT(", "AVG("])
+has_cte  = sql.upper().startswith("WITH ")
+```
+~70-80% of queries pass this check without an LLM call — saving cost and latency.
+
+### Loop Guards
+- SQL error retries: maximum 3 attempts
+- Sanity check retries: maximum 1 attempt (prevents infinite loops)
+
+---
+
+## License
 
 MIT
